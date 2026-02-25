@@ -1,0 +1,5 @@
+{
+  "name": "Discord Voice Manager",
+  "description": "A simple dashboard to manage Discord voice channel connections using tokens.",
+  "requestFramePermissions": []
+}
