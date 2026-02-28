@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, LayoutDashboard, Settings, LogOut, Mic, MicOff, Shield, Key, Hash, Activity } from 'lucide-react';
+import { LogIn, LayoutDashboard, Settings, LogOut, Mic, MicOff, Shield, Key, Hash, Activity, Bell } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
 type User = {
@@ -12,6 +12,40 @@ type Config = {
   token: string;
   channel_id: string;
   status: 'idle' | 'joining' | 'connected';
+  webhook_url?: string;
+  webhook_enabled?: boolean;
+};
+
+// --- Logger Helper ---
+const logger = {
+  format: (level: string, message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    return `[${timestamp}] [${level}] ${message}`;
+  },
+  info: (message: string) => console.log(logger.format('INFO', message)),
+  warn: (message: string) => console.warn(logger.format('WARN', message)),
+  error: (message: string, err?: any) => {
+    console.error(logger.format('ERROR', message), err || '');
+  },
+};
+
+// --- Components ---
+const StatusBadge = ({ status }: { status: string }) => {
+  const colors = {
+    connected: 'bg-emerald-500 text-emerald-500',
+    joining: 'bg-amber-500 text-amber-500',
+    idle: 'bg-zinc-800 text-zinc-500'
+  };
+  const color = colors[status as keyof typeof colors] || colors.idle;
+  
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${color.split(' ')[0]} ${status === 'joining' ? 'animate-pulse' : status === 'connected' ? 'shadow-[0_0_8px_rgba(16,185,129,0.5)]' : ''}`} />
+      <span className={`text-[10px] font-bold uppercase tracking-widest ${color.split(' ')[1]}`}>
+        {status}
+      </span>
+    </div>
+  );
 };
 
 export default function App() {
@@ -87,54 +121,71 @@ export default function App() {
     }
   };
 
-  const [serverInfo, setServerInfo] = useState<{ publicIp: string; port: number } | null>(null);
+  const [connectionTime, setConnectionTime] = useState<number>(0);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (config.status === 'connected') {
+      const interval = setInterval(() => {
+        setConnectionTime(prev => prev + 1);
+      }, 1000);
+      setTimerInterval(interval);
+    } else {
+      if (timerInterval) clearInterval(timerInterval);
+      setConnectionTime(0);
+    }
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [config.status]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${window.location.host}`);
+    
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ type: 'AUTH', userId: user.id }));
+      logger.info('WebSocket connection established');
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'STATUS') {
+        setConfig(prev => ({ ...prev, status: data.status, channel_id: data.channelId || prev.channel_id }));
+        if (data.tag) setDiscordTag(data.tag);
+        
+        if (data.status === 'connected') {
+          toast.success('Link Established', {
+            description: 'Successfully connected to the voice terminal.',
+          });
+        }
+      } else if (data.type === 'ERROR') {
+        toast.error('Discord Error', {
+          description: data.message,
+        });
+      }
+    };
+
+    setWs(socket);
+    return () => socket.close();
+  }, [user]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
+      logger.info('User session restored from local storage');
     }
-    
-    // Verify server health and get info
-    fetch(`${window.location.origin}/api/config/1`) // Just a dummy call to check connectivity
-      .then(res => res.json())
-      .then(data => {
-        setServerInfo({ publicIp: 'Active', port: 3000 });
-      })
-      .catch(err => console.error('Server check failed:', err));
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(`${protocol}//${window.location.host}`);
-      
-      socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'AUTH', userId: user.id }));
-      };
-
-      socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'STATUS') {
-          setConfig(prev => ({ ...prev, status: data.status, channel_id: data.channelId || prev.channel_id }));
-          if (data.tag) setDiscordTag(data.tag);
-          
-          if (data.status === 'connected') {
-            toast.success('Link Established', {
-              description: 'Successfully connected to the voice terminal.',
-            });
-          }
-        } else if (data.type === 'ERROR') {
-          toast.error('Discord Error', {
-            description: data.message,
-          });
-        }
-      };
-
-      setWs(socket);
-      return () => socket.close();
-    }
-  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -150,28 +201,41 @@ export default function App() {
         throw new Error(`Server responded with ${res.status}`);
       }
       const data = await res.json();
+      logger.info('Configuration retrieved');
       setConfig(data);
       if (data.token) {
         handleValidateToken(data.token);
       }
     } catch (err) {
-      console.error('Failed to fetch config:', err);
+      logger.error('Failed to fetch config', err);
     }
   };
 
   const fetchGuilds = async () => {
     if (!user || !config.token) return;
     setIsLoadingGuilds(true);
+    const id = toast.loading('Scanning Infrastructure', {
+      description: 'Retrieving available server nodes...',
+    });
     try {
       const res = await fetch(`/api/guilds/${user.id}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setGuilds(data);
-        // Auto save config when guilds are fetched to ensure token is persisted
+        toast.success('Scan Complete', {
+          id,
+          description: `Detected ${data.length} available server nodes.`,
+        });
         handleSaveConfig();
+      } else {
+        throw new Error(data.error || 'Failed to fetch guilds');
       }
-    } catch (e) {
-      console.error('Failed to fetch guilds', e);
+    } catch (e: any) {
+      logger.error('Failed to fetch guilds', e);
+      toast.error('Scan Failed', {
+        id,
+        description: e.message || 'Could not retrieve infrastructure data.',
+      });
     } finally {
       setIsLoadingGuilds(false);
     }
@@ -189,7 +253,7 @@ export default function App() {
         handleSaveConfig();
       }
     } catch (e) {
-      console.error('Failed to fetch channels', e);
+      logger.error('Failed to fetch channels', e);
     } finally {
       setIsLoadingChannels(false);
     }
@@ -217,17 +281,19 @@ export default function App() {
       if (data.success) {
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
+        logger.info(`Session initialized for user: ${data.user.username}`);
         toast.success('Access Granted', {
           description: `Welcome back, ${data.user.username}. Session initialized.`,
         });
       } else {
         setError(data.message || 'Login failed');
+        logger.warn(`Login failed: ${data.message}`);
         toast.error('Access Denied', {
           description: data.message || 'Invalid credentials.',
         });
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      logger.error('Login error', err);
       setError(err.message || 'Connection error');
       toast.error('Critical Error', {
         description: err.message || 'Failed to establish connection with the authentication server.',
@@ -242,17 +308,20 @@ export default function App() {
     localStorage.removeItem('user');
   };
 
-  const handleSaveConfig = async (tokenOverride?: string) => {
+  const handleSaveConfig = async (tokenOverride?: string, configOverride?: Config) => {
     if (!user) return;
     setSaveStatus('saving');
+    const targetConfig = configOverride || config;
     try {
       const res = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          token: tokenOverride || config.token,
-          channelId: config.channel_id,
+          token: tokenOverride || targetConfig.token,
+          channelId: targetConfig.channel_id,
+          webhookUrl: targetConfig.webhook_url,
+          webhookEnabled: targetConfig.webhook_enabled,
         }),
       });
       if (res.ok) {
@@ -578,6 +647,99 @@ export default function App() {
               </div>
             </section>
 
+            {/* Monitoring & Alerts Section */}
+            {tokenValid === true && (
+              <section className="space-y-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-1.5 h-6 bg-blue-500 rounded-full" />
+                  <h2 className="text-xl font-bold tracking-tight">Monitoring & Alerts</h2>
+                </div>
+
+                <div className="bg-zinc-900/50 border border-white/5 rounded-[24px] p-6 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                        <Bell className="w-3 h-3" />
+                        Discord Webhook Logging
+                      </label>
+                      <p className="text-[10px] text-zinc-600">Receive real-time alerts for connection events.</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newState = !config.webhook_enabled;
+                        const updatedConfig = { ...config, webhook_enabled: newState };
+                        setConfig(updatedConfig);
+                        handleSaveConfig(undefined, updatedConfig);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${config.webhook_enabled ? 'bg-blue-500' : 'bg-zinc-800'}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${config.webhook_enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                      />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {config.webhook_enabled && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-4 pt-2 overflow-hidden"
+                      >
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Webhook URL</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={config.webhook_url || ''}
+                              onChange={(e) => setConfig({ ...config, webhook_url: e.target.value })}
+                              className="flex-1 bg-black/40 border border-white/5 rounded-2xl px-5 py-4 focus:outline-none focus:border-white/20 transition-all font-mono text-xs text-zinc-300"
+                              placeholder="https://discord.com/api/webhooks/..."
+                            />
+                            <button
+                              onClick={async () => {
+                                await handleSaveConfig();
+                                try {
+                                  const res = await fetch('/api/test-webhook', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ userId: user.id }),
+                                  });
+                                  if (res.ok) {
+                                    toast.success('Test Notification Sent', {
+                                      description: 'Check your Discord channel for the alert.',
+                                    });
+                                  } else {
+                                    toast.error('Webhook Test Failed', {
+                                      description: 'Ensure the URL is correct and active.',
+                                    });
+                                  }
+                                } catch (e) {
+                                  toast.error('Network Error', {
+                                    description: 'Failed to trigger webhook test.',
+                                  });
+                                }
+                              }}
+                              className="bg-zinc-800 hover:bg-zinc-700 text-white px-5 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/5"
+                            >
+                              Test
+                            </button>
+                            <button
+                              onClick={() => handleSaveConfig()}
+                              className="bg-white text-black px-5 rounded-2xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/5"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </section>
+            )}
+
             {/* Server Selection */}
             {tokenValid === true && (
               <section className="space-y-6">
@@ -738,12 +900,7 @@ export default function App() {
               <div className="pt-6 border-t border-white/5 space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Link Status</span>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${config.status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : config.status === 'joining' ? 'bg-amber-500 animate-pulse' : 'bg-zinc-800'}`} />
-                    <span className={`text-[10px] font-bold uppercase tracking-widest ${config.status === 'connected' ? 'text-emerald-500' : config.status === 'joining' ? 'text-amber-500' : 'text-zinc-500'}`}>
-                      {config.status}
-                    </span>
-                  </div>
+                  <StatusBadge status={config.status} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Mute Protocol</span>
@@ -756,17 +913,23 @@ export default function App() {
               </div>
             </section>
 
-            {/* System Info */}
+            {/* Active Session Info */}
             <section className="bg-zinc-900/30 border border-white/5 rounded-[32px] p-8 space-y-6">
-              <h3 className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">System Diagnostics</h3>
+              <h3 className="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Session Details</h3>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Node IP</span>
-                  <span className="text-[10px] font-mono text-zinc-300">{serverInfo?.publicIp || 'Detecting...'}</span>
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Status</span>
+                  <StatusBadge status={config.status} />
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-zinc-500 font-bold uppercase">Uptime</span>
-                  <span className="text-[10px] font-mono text-zinc-300">99.9%</span>
+                  <span className={`text-[10px] font-mono ${config.status === 'connected' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+                    {config.status === 'connected' ? formatTime(connectionTime) : '00:00:00'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Protocol</span>
+                  <span className="text-[10px] font-mono text-zinc-300">UDP / DAVE</span>
                 </div>
                 <div className="pt-4 border-t border-white/5">
                   <div className="flex items-center gap-2 mb-2">
@@ -780,6 +943,33 @@ export default function App() {
               </div>
             </section>
 
+            {/* Troubleshooting Section */}
+            <section className="bg-zinc-900/30 border border-white/5 rounded-[32px] p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-500">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Troubleshooting Connection</h3>
+                  <p className="text-xs text-zinc-500">Solusi jika bot gagal terhubung ke Voice Channel</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">01. Region Voice</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">Ganti region Voice Channel di Discord (Settings Channel &rarr; Overview &rarr; Region Override) ke <b>Singapore</b> atau <b>US Central</b>.</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">02. UDP Traffic</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">Beberapa hosting memblokir lalu lintas UDP. Jika bot terus "Stuck", kemungkinan besar hosting Anda tidak mendukung Voice Discord.</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">03. Reset Token</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed">Pastikan token akun Anda valid. Coba logout dan login kembali di dashboard ini untuk menyegarkan sesi bot.</p>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </main>
