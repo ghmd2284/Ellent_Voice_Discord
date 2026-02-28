@@ -352,8 +352,9 @@ async function startServer() {
         channelId: channel.id,
         guildId: channel.guild.id,
         adapterCreator: channel.guild.voiceAdapterCreator as any,
-        selfDeaf: true,
+        selfDeaf: false,
         selfMute: true,
+        // group: client.user?.id // Omitting group to see if it helps with default adapter behavior
       });
 
       // Add debug logging
@@ -371,10 +372,7 @@ async function startServer() {
           
           if (connection.state.status === VoiceConnectionStatus.Connecting || connection.state.status === VoiceConnectionStatus.Signalling) {
              logger.warn(`[Voice] Stuck in ${connection.state.status}. UDP traffic is likely blocked or server is unreachable.`);
-             discordManager.notify(userId, { 
-               type: 'ERROR', 
-               message: 'Voice connection stuck. Solusi: 1. Ganti Region Voice Channel di Discord (misal ke Singapore/US). 2. Pastikan server hosting Anda mengizinkan lalu lintas UDP. 3. Coba lagi dalam beberapa menit.' 
-             });
+             discordManager.notify(userId, { type: 'ERROR', message: 'Voice connection stuck. This might be due to UDP blocking or a temporary Discord issue (521).' });
           }
           
           connection.destroy();

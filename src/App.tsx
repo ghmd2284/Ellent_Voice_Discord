@@ -943,33 +943,6 @@ export default function App() {
               </div>
             </section>
 
-            {/* Troubleshooting Section */}
-            <section className="bg-zinc-900/30 border border-white/5 rounded-[32px] p-8">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-500">
-                  <Activity className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold">Troubleshooting Connection</h3>
-                  <p className="text-xs text-zinc-500">Solusi jika bot gagal terhubung ke Voice Channel</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">01. Region Voice</p>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Ganti region Voice Channel di Discord (Settings Channel &rarr; Overview &rarr; Region Override) ke <b>Singapore</b> atau <b>US Central</b>.</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">02. UDP Traffic</p>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Beberapa hosting memblokir lalu lintas UDP. Jika bot terus "Stuck", kemungkinan besar hosting Anda tidak mendukung Voice Discord.</p>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">03. Reset Token</p>
-                  <p className="text-xs text-zinc-400 leading-relaxed">Pastikan token akun Anda valid. Coba logout dan login kembali di dashboard ini untuk menyegarkan sesi bot.</p>
-                </div>
-              </div>
-            </section>
           </div>
         </div>
       </main>
