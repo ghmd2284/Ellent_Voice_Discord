@@ -1,0 +1,5 @@
+{
+  "name": "Ellent Voice Discord",
+  "description": "A simple dashboard to manage Discord voice channel connections using tokens.",
+  "requestFramePermissions": []
+}
