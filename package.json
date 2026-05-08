@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build:frontend": "vite build",
-    "build:backend": "npx esbuild server.ts --bundle --platform=node --target=node18 --format=esm --external:discord.js-selfbot-v13 --external:@discordjs/voice --external:@snazzah/davey --external:ws --external:express --external:bcryptjs --outfile=dist/server.js",
+    "build:backend": "npx esbuild server.ts --bundle --platform=node --target=node18 --format=esm --packages=external --outfile=dist/server.js",
     "build": "npm run build:frontend && npm run build:backend",
     "start": "node dist/server.js",
     "preview": "vite preview",
