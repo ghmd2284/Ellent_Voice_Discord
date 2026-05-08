@@ -27,7 +27,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   const wss = new WebSocketServer({ server });
-  const PORT = parseInt(process.env.PORT || "3000", 10);
+  const PORT = parseInt(process.env.PORT || "3232", 10);
 
   app.use(express.json());
 
@@ -238,7 +238,7 @@ async function startServer() {
     });
   }
 
-  const HOST = process.env.HOST;
+  const HOST = process.env.HOST || "0.0.0.0";
 
   const listenCallback = () => {
     logger.info(`[Server] Running on http://${HOST || 'localhost'}:${PORT}`);
