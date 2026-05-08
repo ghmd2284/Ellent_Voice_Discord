@@ -519,9 +519,17 @@ async function startServer() {
     });
   }
 
-  server.listen(PORT, "0.0.0.0", () => {
-    logger.info(`[Server] Running on http://localhost:${PORT}`);
-  });
+  const HOST = process.env.HOST;
+  
+  const listenCallback = () => {
+    logger.info(`[Server] Running on http://${HOST || 'localhost'}:${PORT}`);
+  };
+
+  if (HOST) {
+    server.listen(PORT, HOST, listenCallback);
+  } else {
+    server.listen(PORT, listenCallback);
+  }
 }
 
 startServer().catch(err => {
